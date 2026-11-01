@@ -2,6 +2,15 @@
 __pycache__/
 *.pyc
 .vscode/
+.idea/
 dist/
 build/
 *.spec
+
+# Base de datos SQLite (cambia con cada simulación)
+pandemia.db
+*.db
+
+# Archivos generados por el programa
+*.xlsx
+*.csv

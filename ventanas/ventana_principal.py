@@ -7,6 +7,8 @@ from ui import reporte
 from core.estado_global import EstadoGlobal, MESES, N_MIN, N_MAX, FUENTE_PDF_NOMBRE, FUENTE_PDF_URL
 from ventanas.registro import TEMAS
 from ventanas.vista_previa import VistaPrevia
+from ventanas.ventana_historial import VentanaHistorial
+from core.base_datos import BaseDatos
 from ventanas.ventana_sir import VentanaSIR
 from ventanas.ventana_error import VentanaError
 from ventanas.ventana_spline import VentanaSpline
@@ -33,6 +35,8 @@ class VentanaPrincipal(tk.Tk):
     def __init__(self):
         super().__init__()
         self.estado = EstadoGlobal()
+        self.base_datos = BaseDatos()
+        self.ventana_historial = None
         self.panel_actual = None
         self.clave_actual = None
         self.simulacion_aplicada = False
@@ -244,7 +248,10 @@ class VentanaPrincipal(tk.Tk):
             marco, text='💾  Guardar reporte completo en PDF', bg=C['border'], fg=C['txt2'],
             font=('Consolas', 11, 'bold'), relief=tk.FLAT, bd=0, padx=22, pady=12,
             cursor='hand2', state=tk.DISABLED, command=self.guardar_reporte_completo)
-        self.btn_reporte_completo.pack(side=tk.LEFT)
+        self.btn_reporte_completo.pack(side=tk.LEFT, padx=(0, 10))
+        tk.Button(marco, text='📊  Historial y estadísticas', bg=C['fondo_f'], fg=C['txt'],
+                  font=('Consolas', 11, 'bold'), relief=tk.FLAT, bd=0, padx=22, pady=12,
+                  cursor='hand2', command=self.abrir_historial).pack(side=tk.LEFT)
 
     def _construir_vista_previa(self, contenedor):
         marco = tk.LabelFrame(contenedor, text=' Vista previa rápida — resumen y análisis de la simulación ',
@@ -273,8 +280,31 @@ class VentanaPrincipal(tk.Tk):
         for c in range(3):
             cuadricula.grid_columnconfigure(c, weight=1, uniform='sel')
 
+    def abrir_historial(self):
+        if self.ventana_historial is not None and self.ventana_historial.winfo_exists():
+            self.ventana_historial.refrescar()
+            self.ventana_historial.lift()
+            return
+        self.ventana_historial = VentanaHistorial(self, self.base_datos, on_cargar=self.cargar_parametros)
+
+    def cargar_parametros(self, fila):
+        self.estado.beta, self.estado.gamma = fila['beta'], fila['gamma']
+        self.estado.N, self.estado.I0 = fila['n'], fila['i0']
+        self.sliders_maestros['beta'].set(fila['beta'])
+        self.sliders_maestros['gamma'].set(fila['gamma'])
+        self.sliders_maestros['N'].set(fila['n'])
+        self.sliders_maestros['I0'].set(fila['i0'])
+        self.notebook.select(self.tab_simulacion)
+        self.aplicar_simulacion()
+
     def aplicar_simulacion(self):
         self.actualizar_todo()
+        try:
+            self.base_datos.guardar_simulacion(self.estado)
+            if self.ventana_historial is not None and self.ventana_historial.winfo_exists():
+                self.ventana_historial.refrescar()
+        except Exception as e:
+            messagebox.showwarning('Historial', f'La simulación se calculó, pero no se pudo guardar en la base de datos:\n{e}')
         if not self.simulacion_aplicada:
             self.frame_selector.pack(fill=tk.X, padx=4, pady=6, before=self.frame_resultado)
             self.simulacion_aplicada = True
