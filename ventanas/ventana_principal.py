@@ -9,6 +9,7 @@ from ventanas.registro import TEMAS
 from ventanas.vista_previa import VistaPrevia
 from ventanas.ventana_historial import VentanaHistorial
 from core.base_datos import BaseDatos
+from ui.exportar_excel import exportar_excel
 from ventanas.ventana_sir import VentanaSIR
 from ventanas.ventana_error import VentanaError
 from ventanas.ventana_spline import VentanaSpline
@@ -251,7 +252,10 @@ class VentanaPrincipal(tk.Tk):
         self.btn_reporte_completo.pack(side=tk.LEFT, padx=(0, 10))
         tk.Button(marco, text='📊  Historial y estadísticas', bg=C['fondo_f'], fg=C['txt'],
                   font=('Consolas', 11, 'bold'), relief=tk.FLAT, bd=0, padx=22, pady=12,
-                  cursor='hand2', command=self.abrir_historial).pack(side=tk.LEFT)
+                  cursor='hand2', command=self.abrir_historial).pack(side=tk.LEFT, padx=(0, 10))
+        tk.Button(marco, text='📗  Generar Excel', bg=C['R'], fg='#0D1117',
+                  font=('Consolas', 11, 'bold'), relief=tk.FLAT, bd=0, padx=22, pady=12,
+                  cursor='hand2', command=self.generar_excel).pack(side=tk.LEFT)
 
     def _construir_vista_previa(self, contenedor):
         marco = tk.LabelFrame(contenedor, text=' Vista previa rápida — resumen y análisis de la simulación ',
@@ -286,6 +290,24 @@ class VentanaPrincipal(tk.Tk):
             self.ventana_historial.lift()
             return
         self.ventana_historial = VentanaHistorial(self, self.base_datos, on_cargar=self.cargar_parametros)
+
+    def generar_excel(self):
+        if not self.base_datos.total():
+            messagebox.showinfo('Generar Excel', 'Todavía no hay simulaciones guardadas.\n'
+                                'Pulsa primero «Aplicar Simulación».')
+            return
+        ruta = filedialog.asksaveasfilename(
+            defaultextension='.xlsx', filetypes=[('Libro de Excel', '*.xlsx')],
+            initialfile='PandemiaSimulador_historial.xlsx')
+        if not ruta:
+            return
+        try:
+            exportar_excel(self.base_datos, ruta)
+            messagebox.showinfo('Generar Excel', f'Excel guardado en:\n{ruta}')
+        except PermissionError:
+            messagebox.showerror('Generar Excel', 'No se pudo guardar: cierra el archivo si lo tienes abierto en Excel.')
+        except Exception as e:
+            messagebox.showerror('Generar Excel', f'No se pudo generar el Excel:\n{e}')
 
     def cargar_parametros(self, fila):
         self.estado.beta, self.estado.gamma = fila['beta'], fila['gamma']
