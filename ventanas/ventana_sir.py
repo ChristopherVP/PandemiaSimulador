@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.gridspec as gridspec
 from ui.ventana_base import PanelTema
-from ui.estilo import C, estilo_ax, badge, nota_y, con_numero, num_corto
+from ui.estilo import (C, estilo_ax, badge, con_numero, num_corto, tabla_ax, eje_derecho,
+                       dar_espacio, leyenda, anotar)
 from core.estado_global import MESES
 from core.metodos_numericos import rk4_sir, euler_sir
 
@@ -9,7 +10,11 @@ from core.metodos_numericos import rk4_sir, euler_sir
 class VentanaSIR(PanelTema):
     ICONO = '①'
     TITULO = 'Evolución de la Epidemia'
+    SUBTITULO = 'Modelo SIR (Susceptibles – Infectados – Recuperados) resuelto con Euler y Runge-Kutta 4'
     CLAVE = 'sir'
+    DESCRIPCION = ('Muestra cómo evoluciona el COVID-19 mes a mes en el DMQ (Susceptibles, Infectados, '
+                   'Recuperados), la curva epidémica y el número reproductivo básico R0. Se calcula resolviendo '
+                   'el Modelo SIR (ecuaciones diferenciales) con Euler y Runge-Kutta 4.')
 
     def teoria(self):
         titulo = 'Evolución del COVID-19 en Quito — calculada con el Modelo SIR (EDO), calibrado con datos del DMQ'
@@ -52,8 +57,8 @@ class VentanaSIR(PanelTema):
         return titulo, formulas, explicacion
 
     def crear_ejes(self):
-        gs = gridspec.GridSpec(2, 3, figure=self.fig, top=0.88, bottom=0.10,
-                                hspace=0.70, wspace=0.35, left=0.06, right=0.97)
+        gs = gridspec.GridSpec(2, 3, figure=self.fig, top=0.92, bottom=0.09,
+                               hspace=0.62, wspace=0.50, left=0.075, right=0.955)
         ax_main = self.fig.add_subplot(gs[0, :])
         ax_S = self.fig.add_subplot(gs[1, 0])
         ax_I = self.fig.add_subplot(gs[1, 1])
@@ -61,31 +66,34 @@ class VentanaSIR(PanelTema):
         ax_I2 = ax_I.twinx()
         return dict(main=ax_main, S=ax_S, I=ax_I, I2=ax_I2, info=ax_info)
 
-    def interpretar_resultados(self):
+    def analisis(self):
         r = self._resumen
         if not r:
-            return ''
-        return (
-            f"🔵 GRÁFICA ➊ (S, I, R con RK4 y Euler): con β={r['beta']:.2f} y γ={r['gamma']:.2f} el número "
-            f"reproductivo es R0={r['R0']:.2f}. Como R0 {'es mayor a 1' if r['R0'] > 1 else 'es menor a 1'}, "
-            f"la curva roja de infectados por COVID-19 {'crece hasta un pico y luego baja' if r['R0'] > 1 else 'desciende desde el inicio'}. "
-            f"El pico ocurre en el mes {r['dp']} con {r['pico']:.0f} infectados.\n"
-            f"→ Conclusión: con estos parámetros, el brote en Quito "
-            f"{'se propagaría de forma sostenida' if r['R0'] > 1 else 'estaría controlado y se apagaría solo'}.\n\n"
-            f"🔵 GRÁFICA ➋ (Susceptibles S(t)): la curva azul siempre baja o se mantiene, nunca sube, "
-            f"porque una persona Susceptible al COVID-19 solo puede pasar a Infectada, nunca al revés.\n"
-            f"→ Conclusión: representa a cuánta gente de Quito le queda todavía por exponerse al virus; "
-            f"terminó en {r['S_final']:.0f} personas.\n\n"
-            f"🔵 GRÁFICA ➌ (I(t) y R(t) superpuestas): mientras la curva roja de infectados sube y baja, la "
-            f"verde de recuperados solo puede subir, porque una vez que alguien se recupera del COVID-19 no "
-            f"vuelve a infectarse en este modelo.\n"
-            f"→ Conclusión: la distancia entre ambas curvas al final indica cuánta gente ya pasó la "
-            f"enfermedad y cuánta sigue contagiada.\n\n"
-            f"🔵 GRÁFICA ➍ (tabla resumen): confirma en cifras exactas el pico, el estado epidémico y la "
-            f"duración de la enfermedad (1/γ).\n"
-            f"→ Conclusión: son los mismos datos que se ven en las gráficas ➊-➌, listos para citar en un "
-            f"informe."
-        )
+            return []
+        ctrl = r['R0'] <= 1
+        return [
+            dict(n='1', titulo='Curvas S, I y R con RK4 y Euler',
+                 texto=(f"Con β={r['beta']:.2f} y γ={r['gamma']:.2f} el número reproductivo es R0={r['R0']:.2f}. "
+                        f"Como R0 {'es mayor a 1' if r['R0'] > 1 else 'es menor o igual a 1'}, la curva de infectados "
+                        f"por COVID-19 {'crece hasta un pico y luego baja' if r['R0'] > 1 else 'desciende desde el inicio'}. "
+                        f"El pico ocurre en el mes {r['dp']} con {r['pico']:.0f} infectados."),
+                 conclusion=(f"Con estos parámetros, el brote en Quito "
+                             f"{'se propagaría de forma sostenida hasta alcanzar su pico' if not ctrl else 'estaría controlado y se apagaría solo'}.")),
+            dict(n='2', titulo='Susceptibles S(t)',
+                 texto=("La curva de susceptibles siempre baja o se mantiene, nunca sube, porque una persona "
+                        "susceptible al COVID-19 solo puede pasar a infectada, nunca al revés."),
+                 conclusion=(f"Representa a cuánta gente de Quito le queda por exponerse al virus; al final de la "
+                             f"simulación quedan {r['S_final']:,.0f} personas susceptibles.")),
+            dict(n='3', titulo='Infectados I(t) y Recuperados R(t)',
+                 texto=("Mientras la curva de infectados sube y baja, la de recuperados solo puede subir, porque "
+                        "una vez que alguien se recupera del COVID-19 no vuelve a infectarse en este modelo."),
+                 conclusion=(f"La distancia entre ambas curvas al final indica cuánta gente ya pasó la "
+                             f"enfermedad ({r['R_final']:,.0f}) y cuánta sigue contagiada.")),
+            dict(n='4', titulo='Tabla resumen',
+                 texto=("Confirma en cifras exactas el pico, el estado epidémico, el error entre Euler y RK4 y la "
+                        "duración de la enfermedad (1/γ)."),
+                 conclusion="Son los mismos datos de las gráficas 1 a 3, listos para citar en un informe."),
+        ]
 
     def dibujar(self):
         t = np.arange(MESES)
@@ -94,70 +102,68 @@ class VentanaSIR(PanelTema):
 
         S4, I4, R4 = rk4_sir(beta, gamma, N, I0, MESES)
         Se, Ie, Re = euler_sir(beta, gamma, N, I0, MESES)
-        pico = np.max(I4)
+        pico = float(np.max(I4))
         dp = int(np.argmax(I4))
 
-        ax_main = self.ejes['main']; ax_main.cla()
-        ax_main.plot(t, S4, color=C['S'], lw=2.2, label='S — Susceptibles (RK4)')
-        ax_main.plot(t, I4, color=C['I'], lw=2.5, label='I — Infectados   (RK4)')
-        ax_main.plot(t, R4, color=C['R'], lw=2.2, label='R — Recuperados  (RK4)')
-        ax_main.plot(t, Ie, color=C['I_eu'], lw=1.6, ls='--', alpha=0.75, label='I — Infectados (Euler, aprox.)')
-        ax_main.fill_between(t, I4, Ie, alpha=0.12, color=C['I_eu'], label='Diferencia Euler−RK4')
-        ax_main.axvline(dp, color=C['I'], lw=1.2, ls=':', alpha=0.6)
-        ax_main.annotate(f'  Pico RK4\n  {pico:.0f} infectados\n  Mes {dp}',
-                          xy=(dp, pico), xytext=(min(dp + 1, MESES - 2), pico * 0.82), color=C['I'], fontsize=9,
-                          arrowprops=dict(arrowstyle='->', color=C['I'], lw=1.3))
-        ax_main.set_xlim(0, MESES - 1); ax_main.set_ylim(0, N * 1.09)
-        ax_main.legend(fontsize=8, loc='lower right', ncol=2, framealpha=0.85)
-        estilo_ax(ax_main, con_numero(1, f'Modelo SIR COVID-19 — β={beta:.2f}  γ={gamma:.2f}  I0={I0}  N={N:,}  |  R0=β/γ={R0:.3f}'),
-                  ylabel='Personas (S, I o R)')
-        badge(ax_main, 0.30, 0.97, f'R0={R0:.2f}  {"⚠ EPIDEMIA" if R0 > 1 else "✓ CONTROLADO"}',
-              '#DA3633' if R0 > 1 else '#238636')
-        nota_y(ax_main, 'Eje Y = cantidad de personas en\ncada grupo (S, I o R) ese mes')
+        # ---------------------------------------------------------------- 1
+        ax = self.ejes['main']; ax.cla()
+        ax.plot(t, S4, color=C['S'], lw=2.2, label='S  Susceptibles (RK4)')
+        ax.plot(t, I4, color=C['I'], lw=2.4, label='I  Infectados (RK4)')
+        ax.plot(t, R4, color=C['R'], lw=2.2, label='R  Recuperados (RK4)')
+        ax.plot(t, Ie, color=C['I_eu'], lw=1.5, ls='--', label='I  Infectados (Euler)')
+        ax.fill_between(t, I4, Ie, alpha=0.18, color=C['I_eu'], label='Diferencia Euler − RK4')
+        ax.axvline(dp, color=C['I'], lw=1.0, ls=':', alpha=0.7)
+        ax.set_xlim(0, MESES - 1); ax.set_ylim(0, N * 1.0)
+        dar_espacio(ax, 0.24)
+        anotar(ax, dp, pico, f'Pico: {pico:,.0f} infectados (mes {dp})', C['I'], MESES - 1)
+        leyenda(ax, loc='upper center', ncol=5, fontsize=8)
+        estilo_ax(ax, con_numero(1, 'Modelo SIR del COVID-19: Susceptibles, Infectados y Recuperados'),
+                  ylabel='Personas')
+        badge(ax, f'R0 = {R0:.2f}   {"EPIDEMIA" if R0 > 1 else "CONTROLADO"}', C['mal'] if R0 > 1 else C['ok'])
 
-        ax_S = self.ejes['S']; ax_S.cla()
-        ax_S.plot(t, S4, color=C['S'], lw=2.2)
-        ax_S.fill_between(t, S4, alpha=0.15, color=C['S'])
-        ax_S.axvline(dp, color=C['S'], lw=1, ls=':', alpha=0.5)
-        estilo_ax(ax_S, con_numero(2, 'Susceptibles S(t)'), ylabel='Personas susceptibles')
-        ax_S.set_xlim(0, MESES - 1); ax_S.set_ylim(0, N * 1.05)
-        ax_S.text(0.98, 0.95, f'S final\n{S4[-1]:.0f}', transform=ax_S.transAxes, ha='right', fontsize=8, color=C['S'])
-        nota_y(ax_S, 'Personas que aún NO se\nhan contagiado del COVID-19')
+        # ---------------------------------------------------------------- 2
+        ax = self.ejes['S']; ax.cla()
+        rango = max(N - S4.min(), 0.002 * N)
+        ax.plot(t, S4, color=C['S'], lw=2.2, marker='o', ms=3.5, label=f'S(t)  final = {S4[-1]:,.0f}')
+        ax.axhline(N, color=C['ref'], lw=1.0, ls='--', alpha=0.7, label=f'N = {N:,}')
+        ax.fill_between(t, S4, S4.min() - 0.25 * rango, alpha=0.15, color=C['S'])
+        ax.set_xlim(0, MESES - 1)
+        ax.set_ylim(S4.min() - 0.25 * rango, N + 0.55 * rango)
+        leyenda(ax, loc='upper right', fontsize=7.8)
+        estilo_ax(ax, con_numero(2, 'Susceptibles S(t)'), ylabel='Personas susceptibles')
 
+        # ---------------------------------------------------------------- 3
         ax_I = self.ejes['I']; ax_I.cla()
         ax_I2 = self.ejes['I2']; ax_I2.cla()
-        ax_I.plot(t, I4, color=C['I'], lw=2.2, label='RK4')
-        ax_I.plot(t, Ie, color=C['I_eu'], lw=1.6, ls='--', alpha=0.8, label='Euler')
+        ax_I.plot(t, I4, color=C['I'], lw=2.2, label='I  Infectados (RK4)')
+        ax_I.plot(t, Ie, color=C['I_eu'], lw=1.5, ls='--', label='I  Infectados (Euler)')
         ax_I.fill_between(t, I4, Ie, alpha=0.2, color=C['I_eu'])
-        ax_I2.plot(t, R4, color=C['R'], lw=1.6, alpha=0.7)
-        ax_I2.set_ylabel('Personas recuperadas', fontsize=8.5, color=C['R'])
-        ax_I2.tick_params(labelsize=8, colors=C['R'])
-        ax_I.legend(fontsize=8, loc='upper right')
+        ax_I2.plot(t, R4, color=C['R'], lw=2.0, label='R  Recuperados (RK4)')
         ax_I.set_xlim(0, MESES - 1); ax_I.set_ylim(0, None)
-        estilo_ax(ax_I, con_numero(3, f'Infectados I(t) y Recuperados R(t) | Pico={pico:.0f} (mes {dp})'), ylabel='Personas infectadas')
-        nota_y(ax_I, 'Rojo=infectados ahora (eje izq.)\nVerde=recuperados en total (eje der.)')
+        ax_I2.set_ylim(0, None)
+        dar_espacio(ax_I, 0.34); dar_espacio(ax_I2, 0.34)
+        estilo_ax(ax_I, con_numero(3, 'Infectados I(t) y Recuperados R(t)'), ylabel='Personas infectadas')
+        ax_I.yaxis.label.set_color(C['I'])
+        eje_derecho(ax_I2, 'Personas recuperadas', C['R'])
+        leyenda(ax_I, loc='upper right', fontsize=7.4, ejes_extra=(ax_I2,))
 
-        ax_info = self.ejes['info']; ax_info.cla(); ax_info.axis('off')
-        pico_eu = np.max(Ie); mes_eu = int(np.argmax(Ie))
+        # ---------------------------------------------------------------- 4
+        pico_eu = float(np.max(Ie)); mes_eu = int(np.argmax(Ie))
         rows = [
             ['R0 = β/γ', f'{R0:.4f}'],
-            ['Estado', '⚠ EPIDEMIA' if R0 > 1 else '✓ CONTROLADO'],
+            ['Estado', 'EPIDEMIA' if R0 > 1 else 'CONTROLADO'],
             ['Pico RK4', f'{num_corto(pico)} (mes {dp})'],
             ['Pico Euler', f'{num_corto(pico_eu)} (mes {mes_eu})'],
-            ['Error pico |RK4-Eu|', f'{num_corto(abs(pico - pico_eu))} pers.'],
+            ['Error del pico', f'{num_corto(abs(pico - pico_eu))} pers.'],
             ['S final (RK4)', num_corto(S4[-1])],
             ['R final (RK4)', num_corto(R4[-1])],
             ['β / γ', f'{beta:.3f} / {gamma:.3f}'],
             ['N / I0', f'{N:,} / {I0}'],
-            ['1/γ (duración enfermedad)', f'{1 / gamma:.1f} días (≈{1 / gamma / 30:.2f} meses)'],
+            ['Duración 1/γ', f'{1 / gamma:.1f} días ({1 / gamma / 30:.2f} meses)'],
         ]
-        t_tab = ax_info.table(cellText=rows, colLabels=['Métrica', 'Valor'], cellLoc='left', loc='center',
-                              bbox=[0.0, 0.01, 1.0, 0.82])
-        t_tab.auto_set_font_size(False); t_tab.set_fontsize(8.4)
-        for (rr, cc), cell in t_tab.get_celld().items():
-            cell.set_facecolor(C['fondo_f'] if rr == 0 else C['panel'])
-            cell.set_edgecolor(C['border'])
-            cell.set_text_props(color=C['txt'])
-        ax_info.set_title(con_numero(4, 'Resumen'), fontsize=9.6, color=C['txt'], pad=10, fontweight='bold')
+        tabla_ax(self.ejes['info'], rows, ['Métrica', 'Valor'], con_numero(4, 'Resumen'),
+                 alineacion=['l', 'c'], resaltar={(1, 1): C['mal'] if R0 > 1 else C['ok']})
+        self.datos_resumen = [list(r) for r in rows]
 
-        self._resumen = {'beta': beta, 'gamma': gamma, 'R0': R0, 'pico': pico, 'dp': dp, 'S_final': S4[-1]}
+        self._resumen = {'beta': beta, 'gamma': gamma, 'R0': R0, 'pico': pico, 'dp': dp,
+                         'S_final': float(S4[-1]), 'R_final': float(R4[-1])}

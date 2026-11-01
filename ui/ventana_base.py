@@ -1,42 +1,64 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
-import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-from matplotlib.backends.backend_pdf import PdfPages
-from ui.estilo import C
+from ui.estilo import C, tema_claro
 from ui.componentes import crear_panel_teoria
+from ui import reporte
 
 
 class BarraHerramientas(NavigationToolbar2Tk):
     toolitems = [t for t in NavigationToolbar2Tk.toolitems if t[0] not in ('Save', 'Subplots')]
 
 
-def construir_figura_texto(icono, titulo, formulas, interpretacion, estado, ancho_pulgadas=12.0):
-    parametros = (f"β={estado.beta:.3f}   γ={estado.gamma:.3f}   "
-                  f"N={estado.N:,}   I0={estado.I0}   R0={estado.R0:.3f}   "
-                  f"Meses simulados={estado.meses}")
-    fig = Figure(figsize=(ancho_pulgadas, 6.4), dpi=100, facecolor=C['bg'])
-    ax = fig.add_axes([0.03, 0.03, 0.94, 0.94])
-    ax.axis('off')
-    cuerpo_formulas = '\n'.join(formulas)
-    cuerpo = (
-        f'PandemiaSimulador — Distrito Metropolitano de Quito (DMQ) — COVID-19\n'
-        f'{icono}  {titulo}\n\n'
-        f'PARAMETROS DE LA SIMULACION:\n{parametros}\n\n'
-        f'FORMULAS:\n{cuerpo_formulas}\n\n'
-        f'ANALISIS DE CADA GRAFICA:\n{interpretacion}'
-    )
-    ax.text(0.0, 1.0, cuerpo, transform=ax.transAxes, va='top', ha='left',
-            fontsize=9.2, color=C['txt'], family='monospace', wrap=True)
-    return fig
-
-
-class PanelTema(tk.Frame):
+class ModuloReporte:
+    """Comportamiento comun de todo resultado que se puede dibujar en pantalla y exportar a PDF.
+    Las subclases definen teoria(), crear_ejes(), dibujar() y analisis()."""
     ICONO = ''
     TITULO = 'Tema'
     CLAVE = ''
+    DESCRIPCION = ''
+    SUBTITULO = ''
 
+    datos_resumen = ()
+
+    def teoria(self):
+        raise NotImplementedError
+
+    def crear_ejes(self):
+        raise NotImplementedError
+
+    def dibujar(self):
+        raise NotImplementedError
+
+    def analisis(self):
+        """Lista de dicts: {'n': '1', 'titulo': ..., 'texto': ..., 'conclusion': ...}"""
+        return []
+
+    def interpretar_resultados(self):
+        """Texto del analisis para mostrar en pantalla."""
+        items = self.analisis()
+        if not items:
+            return ''
+        bloques = []
+        for it in items:
+            bloques.append(f"🔵 GRÁFICA {it['n']} ({it['titulo']}): {it['texto']}\n→ Conclusión: {it['conclusion']}")
+        return '\n\n'.join(bloques)
+
+    def dibujar_en(self, figura):
+        """Redibuja este resultado en otra figura (p. ej. la hoja del PDF) sin tocar la de pantalla."""
+        fig_ant, ejes_ant, resumen_ant = self.fig, self.ejes, dict(getattr(self, '_resumen', {}))
+        try:
+            self.fig = figura
+            self.ejes = self.crear_ejes()
+            self.dibujar()
+        finally:
+            self.fig, self.ejes = fig_ant, ejes_ant
+            self._resumen = resumen_ant
+        return figura
+
+
+class PanelTema(tk.Frame, ModuloReporte):
     def __init__(self, parent, estado, on_volver):
         super().__init__(parent, bg=C['bg'], highlightbackground=C['border'], highlightthickness=1)
         self.estado = estado
@@ -86,25 +108,13 @@ class PanelTema(tk.Frame):
         panel = crear_panel_teoria(self, titulo, formulas, explicacion, wraplength=950)
         panel.pack(side=tk.TOP, fill=tk.X, padx=12, pady=10)
 
-    def teoria(self):
-        raise NotImplementedError
-
-    def interpretar_resultados(self):
-        return ''
-
     def cerrar(self):
         self.estado.desuscribir(self.actualizar)
         self.on_volver()
         self.destroy()
 
-    def crear_ejes(self):
-        raise NotImplementedError
-
     def construir_controles(self):
         pass
-
-    def dibujar(self):
-        raise NotImplementedError
 
     def actualizar(self, *_):
         self.dibujar()
@@ -120,16 +130,8 @@ class PanelTema(tk.Frame):
             initialfile=f'{nombre_defecto}.pdf')
         if not ruta:
             return
-
-        self.canvas.draw()
-        titulo, formulas, _ = self.teoria()
-        interpretacion = self.interpretar_resultados()
-        fig_txt = construir_figura_texto(self.ICONO, titulo, formulas, interpretacion, self.estado)
-
         try:
-            with PdfPages(ruta) as pdf:
-                pdf.savefig(self.fig, facecolor=C['bg'])
-                pdf.savefig(fig_txt, facecolor=C['bg'])
+            reporte.guardar_modulo(ruta, self, self.estado)
         except Exception as e:
             messagebox.showerror('No se pudo guardar el reporte',
                                  f'Ocurrió un problema generando el PDF:\n{e}')

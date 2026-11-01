@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.gridspec as gridspec
 from ui.ventana_base import PanelTema
-from ui.estilo import C, estilo_ax, nota_y, con_numero, num_corto
+from ui.estilo import C, estilo_ax, con_numero, num_corto, tabla_ax, dar_espacio, leyenda
 from ui.componentes import crear_slider
 from core.estado_global import MESES
 from core.metodos_numericos import rk4_sir, simpson_compuesta
@@ -12,7 +12,11 @@ _trapz = getattr(np, 'trapezoid', None) or np.trapz
 class VentanaSimpson(PanelTema):
     ICONO = '⑤'
     TITULO = 'Impacto en el Sistema de Salud'
+    SUBTITULO = 'Integración numérica con la regla de Simpson compuesta'
     CLAVE = 'simpson'
+    DESCRIPCION = ('Muestra la carga total de infectados-mes de COVID-19 sobre el sistema de salud, comparable '
+                   'con la ocupación hospitalaria y de camas UCI que reporta el DMQ. Se calcula con la Regla de '
+                   'Simpson (integración numérica).')
 
     def teoria(self):
         titulo = 'Impacto del COVID-19 en el Sistema de Salud — calculado con Integración de Simpson'
@@ -45,13 +49,10 @@ class VentanaSimpson(PanelTema):
         return titulo, formulas, explicacion
 
     def crear_ejes(self):
-        gs = gridspec.GridSpec(2, 3, figure=self.fig, top=0.88, bottom=0.10,
-                                hspace=0.70, wspace=0.35, left=0.06, right=0.97)
-        ax_main = self.fig.add_subplot(gs[0, :])
-        ax_conv = self.fig.add_subplot(gs[1, 0])
-        ax_trap = self.fig.add_subplot(gs[1, 1])
-        ax_info = self.fig.add_subplot(gs[1, 2])
-        return dict(main=ax_main, conv=ax_conv, trap=ax_trap, info=ax_info)
+        gs = gridspec.GridSpec(2, 3, figure=self.fig, top=0.92, bottom=0.09,
+                               hspace=0.62, wspace=0.42, left=0.075, right=0.97)
+        return dict(main=self.fig.add_subplot(gs[0, :]), conv=self.fig.add_subplot(gs[1, 0]),
+                    trap=self.fig.add_subplot(gs[1, 1]), info=self.fig.add_subplot(gs[1, 2]))
 
     def construir_controles(self):
         self.controles['a'] = 0
@@ -76,98 +77,94 @@ class VentanaSimpson(PanelTema):
         _, I4, _ = rk4_sir(beta, gamma, N, I0, MESES)
         area_tot = simpson_compuesta(I4, 0, MESES - 1)
 
-        a = int(self.controles.get('a', 0)); b = int(self.controles.get('b', MESES - 3))
+        a = int(self.controles.get('a', 0)); b = int(self.controles.get('b', min(MESES - 1, 7)))
         a = max(0, min(MESES - 3, a)); b = max(a + 2, min(MESES - 1, b))
         area = simpson_compuesta(I4, a, b)
         area_tr = float(_trapz(I4[a:b + 1], t[a:b + 1]))
         dif = abs(area - area_tr)
         pct = area / area_tot * 100 if area_tot > 0 else 0
 
-        ax_main = self.ejes['main']; ax_main.cla()
-        ax_main.plot(t, I4, color=C['I'], lw=2.2, label='I(t) — RK4')
-        ax_main.fill_between(t[:a + 1], I4[:a + 1], alpha=0.08, color=C['I'])
-        ax_main.fill_between(t[a:b + 1], I4[a:b + 1], alpha=0.45, color=C['simps'],
-                             label=f'∫I(t)dt Simpson ≈ {area:,.0f}')
-        ax_main.fill_between(t[b:], I4[b:], alpha=0.08, color=C['I'])
-        ax_main.axvline(a, color=C['simps'], lw=1.8, ls='--', alpha=0.8)
-        ax_main.axvline(b, color=C['simps'], lw=1.8, ls='--', alpha=0.8)
-        ax_main.set_xlim(0, MESES - 1); ax_main.set_ylim(bottom=0)
-        ax_main.legend(fontsize=8.3)
-        estilo_ax(ax_main, con_numero(1, f'∫I(t)dt mes {a}→{b} | Simpson={area:,.0f} Trapecio={area_tr:,.0f} ({pct:.1f}% del total)'),
+        ax = self.ejes['main']; ax.cla()
+        ax.plot(t, I4, color=C['I'], lw=2.3, marker='o', ms=3.5, label='I(t) — RK4')
+        ax.fill_between(t[a:b + 1], I4[a:b + 1], alpha=0.40, color=C['simps'],
+                        label=f'Área ∫I(t)dt (Simpson) = {area:,.0f} personas·mes')
+        ax.axvline(a, color=C['simps'], lw=1.4, ls='--', alpha=0.9)
+        ax.axvline(b, color=C['simps'], lw=1.4, ls='--', alpha=0.9)
+        ax.set_xlim(0, MESES - 1); ax.set_ylim(bottom=0)
+        dar_espacio(ax, 0.22)
+        leyenda(ax, loc='upper right', ncol=2, fontsize=8)
+        estilo_ax(ax, con_numero(1, f'Carga de infectados entre los meses {a} y {b}  ({pct:.1f} % del total)'),
                   ylabel='Personas infectadas')
-        nota_y(ax_main, 'Personas infectadas activas cada\nmes; el área sombreada es la carga total')
 
-        ax_conv = self.ejes['conv']; ax_conv.cla()
-        npts = list(range(4, MESES + 1))
+        ax = self.ejes['conv']; ax.cla()
+        # Referencia: solucion RK4 con paso 16 veces mas fino, integrada con Simpson (144 subintervalos)
+        k = 16
+        _, I_fino, _ = rk4_sir(beta, gamma, N, I0, (MESES - 1) * k + 1, h=30.0 / k)
+        total_fino = (MESES - 1) * k
+        ref = simpson_compuesta(I_fino, 0, total_fino, h=1.0 / k)
+        subint = [m for m in (2, 4, 6, 8, 12, 16, 24, 36, 48) if total_fino % m == 0]
         e_sp, e_tr = [], []
-        ref = area_tot
-        for np_ in npts:
-            idx = np.round(np.linspace(0, MESES - 1, np_)).astype(int)
-            Is = I4[idx]; ts = t[idx].astype(float); h_ = ts[1] - ts[0]
-            ar_s = Is[0] + Is[-1]
-            for ii in range(1, len(Is) - 1):
-                ar_s += (4 if ii % 2 == 1 else 2) * Is[ii]
-            e_sp.append(abs(ar_s * h_ / 3 - ref))
-            e_tr.append(abs(_trapz(Is, ts) - ref))
-        ax_conv.semilogy(npts, [max(v, 1e-6) for v in e_tr], 'o--', color=C['I_eu'], lw=1.8, ms=5, label='Trapecio O(h²)')
-        ax_conv.semilogy(npts, [max(v, 1e-6) for v in e_sp], 's-', color=C['simps'], lw=2.2, ms=6, label='Simpson O(h⁴)')
-        ax_conv.legend(fontsize=8)
-        estilo_ax(ax_conv, con_numero(2, 'Convergencia Trapecio vs Simpson'), xlabel='Nº de puntos usados', ylabel='Error abs. (escala log)')
-        nota_y(ax_conv, 'Qué tan lejos está cada método\ndel área real, en escala logarítmica')
+        for m in subint:
+            paso_idx = total_fino // m
+            Is = I_fino[::paso_idx][:m + 1]
+            h_ = (MESES - 1) / m
+            e_sp.append(abs(simpson_compuesta(Is, 0, m, h=h_) - ref))
+            e_tr.append(abs(float(_trapz(Is, dx=h_)) - ref))
+        piso = 1e-9
+        ax.semilogy(subint, [max(v, piso) for v in e_tr], 'o--', color=C['I_eu'], lw=1.8, ms=5, label='Trapecio  O(h²)')
+        ax.semilogy(subint, [max(v, piso) for v in e_sp], 's-', color=C['simps'], lw=2.2, ms=5.5, label='Simpson  O(h⁴)')
+        dar_espacio(ax, 0.38, log=True)
+        leyenda(ax, loc='upper right', fontsize=7.6)
+        estilo_ax(ax, con_numero(2, 'Convergencia: Trapecio vs Simpson'), xlabel='Número de subintervalos',
+                  ylabel='Error absoluto (escala log)')
 
-        ax_trap = self.ejes['trap']; ax_trap.cla()
-        seg = t[a:b + 1]; Iseg = I4[a:b + 1]
-        ax_trap.plot(seg, Iseg, color=C['I'], lw=2.2)
-        ax_trap.fill_between(seg, Iseg, alpha=0.20, color=C['simps'], label=f'Simpson: {area:,.0f}')
-        ax_trap.fill_between([a, b], [I4[a], I4[b]], alpha=0.15, color=C['I_eu'])
-        ax_trap.plot([a, b], [I4[a], I4[b]], color=C['I_eu'], lw=1.5, ls='--', label=f'Trapecio: {area_tr:,.0f}')
-        ax_trap.legend(fontsize=8)
-        estilo_ax(ax_trap, con_numero(3, f'Trapecio vs Simpson | diferencia={dif:.2f}'), ylabel='Personas infectadas')
-        nota_y(ax_trap, 'Comparación del área (carga de\ninfectados) según cada método')
+        ax = self.ejes['trap']; ax.cla()
+        area_tr1 = float((I4[a] + I4[b]) / 2.0 * (b - a))
+        nombres = ['Simpson\ncompuesta', 'Trapecio\ncompuesto', 'Trapecio\n(1 tramo)']
+        valores = [area, area_tr, area_tr1]
+        colores = [C['simps'], C['I_eu'], C['S']]
+        barras = ax.bar(nombres, valores, color=colores, width=0.55, edgecolor=C['panel'], linewidth=0.8)
+        for br, v in zip(barras, valores):
+            ax.text(br.get_x() + br.get_width() / 2, v, f'{v:,.0f}', ha='center', va='bottom', fontsize=8.4,
+                    color=C['txt'], fontweight='bold')
+        ax.set_ylim(0, max(valores) * 1.25 if max(valores) > 0 else 1)
+        estilo_ax(ax, con_numero(3, f'Área según cada método  (dif. = {dif:,.1f})'), xlabel='', ylabel='Personas·mes')
+        ax.set_xticks(range(3))
+        ax.set_xticklabels(nombres)
+        ax.tick_params(axis='x', labelsize=8)
 
-        ax_info = self.ejes['info']; ax_info.cla(); ax_info.axis('off')
         prom = area / max(1, b - a)
         rows = [
-            ['Intervalo', f'Meses {a}→{b}'], ['Duración', f'{b - a} meses'],
-            ['∫Simpson', num_corto(area)], ['∫Trapecio', num_corto(area_tr)],
-            ['Diferencia', num_corto(dif, 2)], ['Promedio mensual', num_corto(prom)],
-            ['% del total', f'{pct:.1f}%'], ['Total epidemia', num_corto(area_tot)],
+            ['Intervalo', f'meses {a} a {b}'], ['Duración', f'{b - a} meses'],
+            ['∫ Simpson', f'{num_corto(area)} pers·mes'], ['∫ Trapecio', f'{num_corto(area_tr)} pers·mes'],
+            ['Diferencia', num_corto(dif, 2)], ['Promedio mensual', f'{num_corto(prom)} pers'],
+            ['% del total', f'{pct:.1f} %'], ['Total epidemia', f'{num_corto(area_tot)} pers·mes'],
         ]
-        t_t = ax_info.table(cellText=rows, colLabels=['Concepto', 'Valor'], cellLoc='left', loc='upper center',
-                            bbox=[0.0, 0.42, 1.0, 0.40])
-        t_t.auto_set_font_size(False); t_t.set_fontsize(8.0)
-        for (rr, cc), cell in t_t.get_celld().items():
-            cell.set_facecolor(C['fondo_f'] if rr == 0 else C['panel'])
-            cell.set_edgecolor(C['border'])
-            cell.set_text_props(color=C['txt'])
-        ax_info.text(0.5, 0.36,
-            '∫I(t)dt = carga total de\nCOVID-19 sobre el sistema\nde salud (personas·mes).',
-            ha='center', va='top', transform=ax_info.transAxes, fontsize=8.4, color=C['txt2'],
-            bbox=dict(boxstyle='round', facecolor=C['fondo_f'], edgecolor=C['acento'], lw=1.1))
-        ax_info.set_title(con_numero(4, 'Interpretación'), fontsize=9.6, color=C['txt'], pad=10, fontweight='bold')
+        tabla_ax(self.ejes['info'], rows, ['Concepto', 'Valor'], con_numero(4, 'Resumen del intervalo'),
+                 alineacion=['l', 'c'])
+        self.datos_resumen = [list(r) for r in rows]
+        self._resumen = {'a': a, 'b': b, 'area': area, 'pct': pct, 'dif': dif, 'prom': prom,
+                         'tr1': area_tr1, 'err_tr1': abs(area - area_tr1)}
 
-        self._resumen = {'a': a, 'b': b, 'area': area, 'pct': pct, 'dif': dif}
-
-    def interpretar_resultados(self):
+    def analisis(self):
         r = self._resumen
         if not r:
-            return ''
-        return (
-            f"🔵 GRÁFICA ➊ (área bajo I(t)): la zona amarilla sombreada entre los meses {r['a']} y {r['b']} "
-            f"representa {r['area']:,.0f} \"infectados-mes\" de COVID-19, el {r['pct']:.1f}% del total de "
-            f"la epidemia simulada.\n"
-            f"→ Conclusión: ese es el tramo de tiempo que más carga le pondría al sistema de salud del "
-            f"DMQ.\n\n"
-            f"🔵 GRÁFICA ➋ (Convergencia Trapecio vs Simpson): la línea de Simpson baja más rápido que la "
-            f"del trapecio al usar más puntos (escala logarítmica).\n"
-            f"→ Conclusión: Simpson llega a la misma precisión con muchos menos puntos, porque ajusta "
-            f"parábolas en vez de líneas rectas.\n\n"
-            f"🔵 GRÁFICA ➌ (Trapecio vs Simpson en el intervalo elegido): la diferencia entre ambos métodos "
-            f"es de solo {r['dif']:.2f}.\n"
-            f"→ Conclusión: para esta curva relativamente suave, incluso el trapecio (más simple) da un "
-            f"resultado cercano al de Simpson.\n\n"
-            f"🔵 GRÁFICA ➍ (resumen del intervalo): traduce el área calculada a un promedio mensual de "
-            f"infectados.\n"
-            f"→ Conclusión: es un dato útil para pensar en camas o personal necesarios por mes en ese "
-            f"tramo."
-        )
+            return []
+        return [
+            dict(n='1', titulo='Área bajo I(t)',
+                 texto=(f"La zona sombreada entre los meses {r['a']} y {r['b']} representa {r['area']:,.0f} "
+                        f"«infectados-mes» de COVID-19, el {r['pct']:.1f} % del total de la epidemia simulada."),
+                 conclusion='Ese es el tramo de tiempo que más carga le pondría al sistema de salud del DMQ.'),
+            dict(n='2', titulo='Convergencia Trapecio vs Simpson',
+                 texto=('La línea de Simpson baja más rápido que la del trapecio al usar más puntos '
+                        '(escala logarítmica).'),
+                 conclusion='Simpson llega a la misma precisión con muchos menos puntos, porque ajusta parábolas en vez de rectas.'),
+            dict(n='3', titulo='Área según cada método en el intervalo elegido',
+                 texto=(f"Simpson y el trapecio compuesto difieren en {r['dif']:,.2f} personas·mes, mientras que un "
+                        f"único trapecio sobre todo el intervalo se aleja {r['err_tr1']:,.1f} de Simpson."),
+                 conclusion=('Cuando la curva cambia de forma rápida, un solo trapecio la aproxima mal; Simpson '
+                             'recoge la curvatura y da un resultado más fiel.')),
+            dict(n='4', titulo='Resumen del intervalo',
+                 texto=f"Traduce el área calculada a un promedio de {r['prom']:,.1f} infectados por mes.",
+                 conclusion='Es un dato útil para pensar en camas o personal necesarios por mes en ese tramo.'),
+        ]

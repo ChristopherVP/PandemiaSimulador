@@ -1,16 +1,12 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import webbrowser
-import numpy as np
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.backends.backend_pdf import PdfPages
-from ui.estilo import C, estilo_ax
+from ui.estilo import C
 from ui.componentes import crear_slider
-from ui.ventana_base import construir_figura_texto
+from ui import reporte
 from core.estado_global import EstadoGlobal, MESES, N_MIN, N_MAX, FUENTE_PDF_NOMBRE, FUENTE_PDF_URL
-from core.metodos_numericos import rk4_sir
 from ventanas.registro import TEMAS
+from ventanas.vista_previa import VistaPrevia
 from ventanas.ventana_sir import VentanaSIR
 from ventanas.ventana_error import VentanaError
 from ventanas.ventana_spline import VentanaSpline
@@ -30,27 +26,7 @@ CLASES_TEMA = {
 COLORES_TEMA = {'sir': C['I'], 'error': C['nr_f'], 'spline': C['spline'],
                 'derivacion': C['deriv'], 'simpson': C['simps'], 'nr': C['nr_b']}
 
-DESCRIPCIONES_TEMA = {
-    'sir': 'Muestra cómo evoluciona el COVID-19 mes a mes en el DMQ (Susceptibles, Infectados, '
-           'Recuperados), la curva epidémica y el número reproductivo básico R0. Se calcula resolviendo el '
-           'Modelo SIR (ecuaciones diferenciales) con Euler y Runge-Kutta 4.',
-    'error': 'Muestra qué tan confiable es la simulación del COVID-19 al comparar un método numérico rápido '
-              '(Euler) contra uno preciso (RK4), algo parecido a los sesgos por falta de pruebas y '
-              'subregistro que reconoce el propio informe de Quito. Se calcula con las fórmulas de error '
-              'absoluto y relativo.',
-    'spline': 'Muestra qué tan bien se puede estimar el número de infectados de COVID-19 en meses sin '
-               'datos —igual que entre dos informes quincenales de la Secretaría de Salud—, usando solo '
-               'algunos puntos conocidos. Se calcula con Interpolación por Spline Cúbico.',
-    'derivacion': 'Muestra qué tan rápido crece o baja el contagio de COVID-19 cada mes (la velocidad de '
-                  'cambio de la incidencia, no el número de infectados en sí). Se calcula con '
-                  'Diferenciación Numérica de 3 puntos.',
-    'simpson': 'Muestra la carga total de infectados-mes de COVID-19 sobre el sistema de salud, comparable '
-               'con la ocupación hospitalaria y de camas UCI que reporta el DMQ. Se calcula con la Regla de '
-               'Simpson (integración numérica).',
-    'nr': 'Muestra cómo se ajusta β (contagiosidad del COVID-19) para que el modelo coincida con un pico de '
-          'contagios observado en la vigilancia epidemiológica real, igual que hace el MSP para calibrar '
-          'sus propios modelos. Se calcula con el método de Newton-Raphson.',
-}
+DESCRIPCIONES_TEMA = {clave: cls.DESCRIPCION for clave, cls in CLASES_TEMA.items()}
 
 
 class VentanaPrincipal(tk.Tk):
@@ -83,6 +59,8 @@ class VentanaPrincipal(tk.Tk):
         self._construir_simulacion(self.tab_simulacion)
 
         self.actualizar_todo()
+        self.notebook.bind('<<NotebookTabChanged>>', lambda e: self.after(80, self.vista_previa.refrescar))
+        self.after(250, self.vista_previa.actualizar)
 
     def _configurar_estilo_ttk(self):
         estilo = ttk.Style(self)
@@ -269,18 +247,13 @@ class VentanaPrincipal(tk.Tk):
         self.btn_reporte_completo.pack(side=tk.LEFT)
 
     def _construir_vista_previa(self, contenedor):
-        marco = tk.LabelFrame(contenedor, text=' Vista previa rápida ', bg=C['panel'], fg=C['acento'],
-                              font=('Consolas', 9, 'bold'), labelanchor='n', bd=1)
-        marco.pack(fill=tk.BOTH, padx=4, pady=6)
-
-        self.fig_prev = Figure(figsize=(9, 2.6), dpi=100, facecolor=C['bg'])
-        self.ax_prev = self.fig_prev.add_subplot(111)
-        self.canvas_prev = FigureCanvasTkAgg(self.fig_prev, master=marco)
-        self.canvas_prev.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+        marco = tk.LabelFrame(contenedor, text=' Vista previa rápida — resumen y análisis de la simulación ',
+                              bg=C['panel'], fg=C['acento'], font=('Consolas', 9, 'bold'), labelanchor='n', bd=1)
+        marco.pack(fill=tk.X, padx=4, pady=6)
+        self.vista_previa = VistaPrevia(marco, self.estado)
 
     def _construir_estado(self, contenedor):
-        self.lbl_estado = tk.Label(contenedor, text='', bg=C['bg'], fg=C['txt'], font=('Consolas', 10, 'bold'))
-        self.lbl_estado.pack(pady=(4, 14))
+        tk.Frame(contenedor, bg=C['bg'], height=8).pack()
 
     def _construir_selector_metodos(self, contenedor):
         self.frame_selector = tk.LabelFrame(contenedor, text=' 3. Elige qué resultado quieres ver ',
@@ -306,6 +279,7 @@ class VentanaPrincipal(tk.Tk):
             self.frame_selector.pack(fill=tk.X, padx=4, pady=6, before=self.frame_resultado)
             self.simulacion_aplicada = True
         self.btn_reporte_completo.config(state=tk.NORMAL, bg=C['acento'], fg='#0D1117')
+        self.vista_previa.refrescar()
 
     def reiniciar_todo(self):
         if self.panel_actual is not None:
@@ -357,70 +331,30 @@ class VentanaPrincipal(tk.Tk):
         ventana_oculta = tk.Toplevel(self)
         ventana_oculta.withdraw()
         ventana_oculta.geometry('1300x760')
-
+        paneles = []
+        self.config(cursor='watch')
+        self.update_idletasks()
         try:
-            with PdfPages(ruta) as pdf:
-                pdf.savefig(self._figura_portada(), facecolor=C['bg'])
-                for clave, _, _ in TEMAS:
-                    cls = CLASES_TEMA[clave]
-                    panel = cls(ventana_oculta, self.estado, lambda: None)
-                    panel.pack(fill=tk.BOTH, expand=True)
-                    ventana_oculta.update_idletasks()
-                    panel.canvas.draw()
-                    titulo, formulas, _ = panel.teoria()
-                    interpretacion = panel.interpretar_resultados()
-                    pdf.savefig(panel.fig, facecolor=C['bg'])
-                    fig_txt = construir_figura_texto(panel.ICONO, titulo, formulas, interpretacion, self.estado)
-                    pdf.savefig(fig_txt, facecolor=C['bg'])
-                    panel.estado.desuscribir(panel.actualizar)
-                    panel.destroy()
+            modulos = [('previa', self.vista_previa)]
+            for clave, _, _ in TEMAS:
+                panel = CLASES_TEMA[clave](ventana_oculta, self.estado, lambda: None)
+                panel.pack(fill=tk.BOTH, expand=True)
+                if self.panel_actual is not None and clave == self.clave_actual:
+                    panel.controles.update(self.panel_actual.controles)
+                paneles.append(panel)
+                modulos.append((clave, panel))
+            ventana_oculta.update_idletasks()
+            reporte.guardar_completo(ruta, modulos, self.estado)
+            messagebox.showinfo('Reporte guardado', f'El reporte completo se guardó en:\n{ruta}')
         except Exception as e:
             messagebox.showerror('No se pudo guardar el reporte',
                                  f'Ocurrió un problema generando el PDF completo:\n{e}')
         finally:
+            for panel in paneles:
+                panel.estado.desuscribir(panel.actualizar)
             ventana_oculta.destroy()
-
-    def _figura_portada(self):
-        R0 = self.estado.R0
-        fig = Figure(figsize=(12, 6.4), dpi=100, facecolor=C['bg'])
-        ax = fig.add_axes([0.05, 0.05, 0.9, 0.9])
-        ax.axis('off')
-        cuerpo = (
-            'PANDEMIA SIMULADOR\n'
-            'Reporte Completo — COVID-19 en el Distrito Metropolitano de Quito (DMQ)\n\n'
-            'Contiene las 6 ventanas de resultados (gráficas, fórmulas y análisis).\n'
-            'No incluye la Guía de Uso.\n\n'
-            'PARAMETROS DE LA SIMULACION:\n'
-            f'  β (contagio)            = {self.estado.beta:.4f}\n'
-            f'  γ (recuperación)        = {self.estado.gamma:.4f}\n'
-            f'  R0 = β/γ                = {R0:.4f}  ({"EPIDEMIA" if R0 > 1 else "CONTROLADO"})\n'
-            f'  N  (población DMQ)      = {self.estado.N:,}\n'
-            f'  I0 (infectados iniciales)= {self.estado.I0}\n'
-            f'  Meses simulados         = {self.estado.meses}\n\n'
-            f'Fuente de los datos reales: {FUENTE_PDF_NOMBRE}\n'
-            f'{FUENTE_PDF_URL}'
-        )
-        ax.text(0.0, 1.0, cuerpo, transform=ax.transAxes, va='top', ha='left',
-                fontsize=11, color=C['txt'], family='monospace', wrap=True)
-        return fig
+            self.config(cursor='')
 
     def actualizar_todo(self):
-        beta, gamma, N, I0 = self.estado.beta, self.estado.gamma, self.estado.N, self.estado.I0
-        R0 = beta / gamma
-        t = np.arange(MESES)
-        S4, I4, R4 = rk4_sir(beta, gamma, N, I0, MESES)
-
-        self.ax_prev.cla()
-        self.ax_prev.plot(t, S4, color=C['S'], lw=1.8, label='S')
-        self.ax_prev.plot(t, I4, color=C['I'], lw=2.2, label='I')
-        self.ax_prev.plot(t, R4, color=C['R'], lw=1.8, label='R')
-        self.ax_prev.legend(fontsize=8, loc='right')
-        self.ax_prev.set_xlim(0, MESES - 1); self.ax_prev.set_ylim(0, N * 1.05)
-        estilo_ax(self.ax_prev, f'R0={R0:.2f}  |  Pico I≈{np.max(I4):.0f} en el mes {int(np.argmax(I4))}',
-                  ylabel='Personas')
-        self.canvas_prev.draw_idle()
-
-        estado_txt = f'R0 = {R0:.2f}   {"⚠ EPIDEMIA (R0>1)" if R0 > 1 else "✓ CONTROLADO (R0<1)"}'
-        self.lbl_estado.config(text=estado_txt, fg=('#FF7B72' if R0 > 1 else '#3FB950'))
-
+        self.vista_previa.actualizar()
         self.estado.notificar()
