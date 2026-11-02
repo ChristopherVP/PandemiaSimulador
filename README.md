@@ -391,7 +391,7 @@ This is an **educational tool**, not a forecasting or public-health decision too
 
 ## 👤 Author, Repository and License
 
-- **Author:** ChristopherVP
+- **Author:** Christopher Josué Villón Peralta
 - **Repository:** <https://github.com/ChristopherVP/PandemiaSimulador>
 - **Context:** university project for a Numerical Methods course.
 - **License:** *not specified yet* — add a `LICENSE` file (e.g., MIT) if you want others to reuse the code.
